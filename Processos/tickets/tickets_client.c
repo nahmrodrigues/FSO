@@ -1,73 +1,127 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
 #include <mqueue.h>
 #include <sys/stat.h>
 
-#define QUEUE_SERV "/tickets"
-#define QUEUE_CLIENTE "/tickets_received"
+#define QUEUE_SERV "/qq"
+#define GET 0
+#define RETURN 1
 
-typedef struct msg {
-    int control,
-    mqd_t queue
-} Msg;
+int client_id;
+char *filename;
+char *client_queue;
 
-int get_ticket() {
-    Msg msg;
-    int ticket;    
-    
-    mqd_t queue_serv = mq_open(QUEUE_SERV, O_RDWR|O_CREAT);
-    mqd_t queue_client = mq_open(QUEUE_CLIENTE, O_RDWR|O_CREAT);
+void set_client_queue() {
+    filename = malloc(sizeof(char) * 80);
+    sprintf(filename, "%i", client_id);
 
-    if(queue_serv < 0 || queue_client < 0) {
-        perror("mq_open");
-        exit(1);
-    }
+    int length = strlen(filename);
 
-    msg.control = 0;
-    msg.queue = queue_client;
-    
-    int send = mq_send(queue_serv, (void *) msg, sizeof(msg), 0);
-    
-    ssize_t receive = mq_receive (queue_client, (void*) &ticket, sizeof(ticket), 0);
-
-    if(receive < 0) {
-        perror("mq_receive");
-        exit(1);
-    }
-
-    printf("\nTicket recebido: %d", ticket);
-
-    mq_close(queue_serv);
-    mq_close(queue_client);
+    client_queue = malloc(sizeof(char) * (length + 1));
+    strcpy(client_queue, "/");
+    strcat(client_queue, filename);
 }
 
-void return_ticket(int t) {
-    
+void register_client() {
+    FILE *fp = fopen("clients.txt", "a+");
 
+    int id = 0;
+
+    while(!feof(fp))
+        fscanf(fp, "%d", &id);
+    
+    client_id = id + 1;
+    fprintf(fp, "%d\n", client_id);
+
+    fclose(fp);
+    set_client_queue();
+}
+
+void set_msg(int control, int ticket) {
+    FILE *fp = fopen(filename, "w+");
+    fprintf(fp, "%d\n", control);
+    fprintf(fp, "%d\n", ticket);
+    fclose(fp);
+}
+
+int c_get_ticket() {     
+    mqd_t queue_serv = mq_open(QUEUE_SERV, O_RDWR);
+    
+    if(queue_serv < 0) {
+        perror("\nget_ticket|serv: mq_open\n");
+        exit(1);
+    }
+    
+    set_msg(GET, 0);
+
+    if((mq_send(queue_serv, (void *) &client_id, sizeof(client_id), 0)) < 0) {
+        perror("\nget_ticket: mq_send\n");
+        exit(1);
+    }
+
+    printf("\nTicket solicitado.\n");
+
+    int ticket;
+    struct mq_attr attr;
+
+    attr.mq_maxmsg = 100; // capacidade para 100 mensagens
+    attr.mq_msgsize = sizeof(ticket) ; // tamanho de cada mensagem
+    attr.mq_flags = 0;
+
+    mqd_t queue_client = mq_open(client_queue, O_RDWR|O_CREAT, 0666, &attr);
+
+    if(queue_client < 0) {
+        perror("\nget_ticket|client: mq_open\n");
+        exit(1);
+    }
+
+    if((mq_receive(queue_client, (void*) &ticket, sizeof(ticket), 0)) < 0) {
+        perror("\nget_ticket: mq_receive\n");
+        exit(1);
+    }
+
+    printf("Ticket recebido: %d\n", ticket);
+    remove(filename);
+    
+    mq_close(queue_serv);
+    mq_close(queue_client);
+
+    return ticket;
+}
+
+void return_ticket(int ticket) {
+    mqd_t queue_serv = mq_open(QUEUE_SERV, O_RDWR);
+
+    if(queue_serv < 0) {
+        perror("\nreturn_ticket|serv: mq_open\n");
+        exit(1);
+    }
+
+    set_msg(RETURN, ticket);
+
+    if((mq_send(queue_serv, (void *) &client_id, sizeof(client_id), 0)) < 0) {
+        perror("\nget_ticket: mq_send\n");
+        exit(1);
+    }
+
+    mq_close(queue_serv);
 }
 
 int main (int argc, char *argv[]) {
-    // mqd_t queue; // descritor da fila de mensagens
-    // struct mq_attr attr; // atributos da fila de mensagens
-    // int msg ; // as mensagens são números inteiros
+    register_client();
 
-    // define os atributos da fila de mensagens
-    // attr.mq_maxmsg = 10 ; // capacidade para 10 mensagens
-    // attr.mq_msgsize = sizeof(msg) ; // tamanho de cada mensagem
-    // attr.mq_flags = 0 ;
+    int ticket = 0;
 
-    // abre ou cria a fila com permissoes 0666
-    // if ((queue = mq_open (QUEUE, O_RDWR|O_CREAT, 0666, &attr)) < 0) {
-    //     perror("mq_open");
-    //     exit(1);
-    // }
+    while(1) {
+        ticket = c_get_ticket();
+        sleep(1);
+        return_ticket(ticket);
+    }
 
-    // // recebe cada mensagem e imprime seu conteudo
-    // for (;;) {
-    //     if ((mq_receive (queue, (void*) &msg, sizeof(msg), 0)) < 0) {
-    //         perror("mq_receive:");
-    //         exit(1);
-    //     }
-    //     printf ("Received msg value %d\n", msg);
-    // }
+    free(filename);
+    free(client_queue);
+
+    return 0;
 }
