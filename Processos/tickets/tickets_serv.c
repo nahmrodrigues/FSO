@@ -13,7 +13,7 @@
 #include <mqueue.h>
 #include <unistd.h>
 
-#define QUEUE "/queue_serv"
+#define QUEUE "/queue_serv1"
 #define NUM_MAX 100
 #define GET 0
 #define RETURN 1
@@ -140,7 +140,9 @@ int main() {
             exit(1);
         }
 
-        handle_msg(client_id);     
+        handle_msg(client_id);
+
+        // sleep(1);     
     }
 
     mq_close(queue);

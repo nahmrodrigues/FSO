@@ -12,7 +12,7 @@
 #include <mqueue.h>
 #include <sys/stat.h>
 
-#define QUEUE_SERV "/queue_serv"
+#define QUEUE_SERV "/queue_serv1"
 #define GET 0
 #define RETURN 1
 
@@ -103,7 +103,7 @@ int get_ticket() {
     }
 
     printf("Ticket recebido: %d\n", ticket);
-    remove(filename); // apaga o arquivo de informacoes da msg
+    // remove(filename); // apaga o arquivo de informacoes da msg
     
     mq_close(queue_serv);
     mq_close(queue_client);
